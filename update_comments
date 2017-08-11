@@ -100,7 +100,7 @@ read_processed_dir() {
     test -f "$file" && cat "$file"
 }
 
-USAGE="usage: `basename $0` [-q] [-s scan_directory_name] [-p processed_directory_name]"
+USAGE="usage: `basename \"$0\"` [-q] [-s scan_directory_name] [-p processed_directory_name]"
 
 # Parse command line options.
 # Colon after a letter means it has an argument, otherwise it's a flag.
@@ -108,11 +108,11 @@ USAGE="usage: `basename $0` [-q] [-s scan_directory_name] [-p processed_director
 while getopts hvqs:p: OPT; do
     case "$OPT" in
         h)  # help
-            man update_comments || echo "$USAGE"
+            perldoc "$0" || echo "$USAGE"
             exit 0
             ;;
         v) # script version
-            echo "`basename $0` version 0.1"
+            echo "`basename \"$0\"` version 0.2"
             exit 0
             ;;
         q) # Quiet flag - don't ask questions
