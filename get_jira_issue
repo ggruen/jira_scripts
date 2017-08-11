@@ -1,0 +1,254 @@
+#!/usr/bin/perl -w
+
+=head1 NAME
+
+get_jira_issue - Fetch and display info and comments from a JRIA issue
+
+=head1 SYNOPSIS
+
+    get_jira_issue -m machine_name -i issue_code
+
+Examples:
+
+    get_jira_issue -m myjira.aliassian.net -i ABC-123
+
+=head1 DESCRIPTION
+
+Given a JIRA instance and issue code, fetches and displays information and
+comments from the specified issue.
+
+Stores the issue code you provided in a cache file - see the C<-i> option below.
+
+Credentials for the JIRA instance must be provided in ~/.netrc, like this,
+before running the script (replacing letters in all caps with appropriate
+values):
+
+    echo "MY_INSTANCE.atlassian.net login USERNAME password PASSWORD" > \
+        ~/.netrc ; chmod 600 ~/.netrc
+
+To get your JIRA username, go to
+C<https://MYINSTANCE.atlassian.net/secure/ViewProfile.jspa> (replacing
+MYINSTANCE with the name of your JIRA instance) and look at the "Username" field
+in the "JIRA profile" section.  Your username is *not* the email address that
+you use to log in.  This tends to confuse people using API-based programs.
+
+=head1 OPTIONS
+
+Each option has several longer and shorter ways of expressing it.  For the
+single-dash options, use the option, space, and the value.  For double-dash
+options, use the option, equal-sign, and value.  Other variants of this might
+work too - C<man Getopt::Long> for all the gory details.
+
+=over
+
+=item -m, --machine, --machine_name=<value>
+
+The domain name of the JIRA instance that houses the issue you wish to view.
+Don't include http(s)://.  e.g.:
+
+    -m myinstance.atlassian.net
+
+=item -i, --issue_code, --issue=<jira_issue_code>
+
+The JIRA issue code for the issue you want to view.  JIRA sometimes calls the
+C<issue_code> the "Key".  It's the C<PO-112> in
+C<https://myjira.atlassian.net/browse/PO-112>.
+
+If you provide this option with no issue code, or don't provide this option at
+all, C<get_jira_issue> will look in its cache file
+(~/.get_jira_issue_code_cache) for the last issue_code you passed.  The
+acceptance of C<-i> without a code means you can set up an alias like this:
+
+    alias gj='get_jira_issue -m MY_INSTANCE.atlassian.net -i '
+
+And then this will work:
+
+    # Display issue ABC-123
+    gj ABC-123
+
+    # Display it again
+    gj
+
+=item -f, --field, --fields=field_name[,field_name...]
+
+Additional fields to include in the summary output, e.g. custom fields
+for your JIRA instance.  If you need to use these, you probably want to set
+up an alias like:
+
+    alias gj='get_jira_issue -m MY_INSTANCE.atlassian.net -f Branch'
+
+To specify multiple fields, you can either repeat the option, or separate the
+field names with commas.  That is, these will all do the same thing (note
+that I left out the -m argument for brevity):
+
+    get_jira_issue -f "Branch,Customer ID"
+    get_jira_issue -f Branch -f 'Customer ID'
+    get_jira_issue --field Branch --field 'Customer ID'
+    get_jira_issue --fields='Branch,Customer ID'
+
+Note that those are field names, not IDs - that is, they're what's displayed
+in JIRA when you look in the web browser.  C<get_jira_issue> looks up the ID
+for you.  The lookup is a case-insensitive regexp: C</$field_name/i>.
+
+C<get_jira_issue> only outputs fields if there's a value - including custom
+fields. So if you specify a custom field and it doesn't appear, it means it has
+no value.  If you specify a custom field and C<get_jira_issue> can't find it,
+on the other hand, C<get_jira_issue> will die with an appropriate error message.
+
+=back
+
+=cut
+
+use strict;
+use 5.006;
+
+use Getopt::Long;
+use Pod::Usage;
+use JIRA::REST;
+use Term::ANSIColor; # To make things pretty, e.g. "color('red')"
+use Data::Dumper;
+
+my $USAGE_ARGS = {-verbose => 0, -exitval => 1};
+
+my ( $machine_name, $issue_code, @custom_fields );
+GetOptions( 'machine_name|machine|m=s' => \$machine_name,
+    'issue|issue_code|i:s' => \$issue_code,
+    'field|fields|f:s' => \@custom_fields,
+    ) or pod2usage($USAGE_ARGS);
+
+######################################################################
+# Main Program
+
+unless ( $issue_code ) {
+    $issue_code = `cat $ENV{'HOME'}/.get_jira_issue_code_cache`;
+}
+
+pod2usage($USAGE_ARGS) unless ( $machine_name && $issue_code );
+
+# Remove domain name in case people can't read directions.
+$machine_name =~ s/http(s)?:\/\///;
+$machine_name =~ s/\/$//;
+
+my $jira_instance = "https://$machine_name/";
+
+# Clean up the code, mostly to remove whitespace, but also to make it
+# URL-safe.
+$issue_code =~ s/^A-Za-z0-9\-//g;
+
+# Allow comma-delimited fields
+@custom_fields = split(/,/,join(',',@custom_fields));
+
+# Username and password will be read from .netrc.
+# TODO: add optional username and password arguments to this script and
+# pass them to JIRA::REST here.
+# my $jira = JIRA::REST->new($jira_instance, $username, $password);
+my $jira = JIRA::REST->new($jira_instance);
+
+my $issue_fields = $jira->GET("/issue/$issue_code");
+
+my $fields=$issue_fields->{'fields'} or die "Couldn't get fields from issue $issue_code";
+
+# I'm assuming the stuff we get from JIRA is encoded UTF-8, because most
+# web stuff is. man perlunifaq.
+binmode STDOUT, ":encoding(UTF-8)";
+
+print "\nComments:\n";
+
+foreach my $c ( @{$$fields{'comment'}{'comments'}} ) {
+    # "color" function provided by Term::ANSIColor
+    printf(color('white on_blue') . "\n\n%-30s %-20s\n" . color('reset'),
+        $$c{'updateAuthor'}{'displayName'}, $$c{'updated'});
+    print "\n$$c{'body'}\n";
+}
+
+# Yes, these details are at the bottom.  You'll see why after you run it
+# a few times and think, "ooh, I don't have to scroll up or use 'more'
+# to see the stuff I want to".
+print color('white on_blue'), "Issue Key: $$issue_fields{'key'}", color('reset'), "\n";
+print format_field( 'Status', $$fields{'status'}{'name'} );
+print format_field( 'Reporter', format_author( $$fields{'reporter'} ) );
+#print format_field( 'Branch', $$fields{'customfield_13703'} );
+print format_field( 'Assignee', format_author( $$fields{'assignee'} ) );
+# Print the custom fields
+foreach my $field_name ( @custom_fields ) {
+    my $field_id = get_fieldid( $jira, $field_name );
+    print format_field(
+        $field_name,
+        $$fields{"$field_id"}
+    );
+}
+
+# Remember...
+open OUTFILE, '>', "$ENV{'HOME'}/.get_jira_issue_code_cache";
+print OUTFILE "$issue_code";
+close OUTFILE;
+
+# Handy if you want to add fields
+#print Dumper($issue_fields);
+######################################################################
+# Subroutines
+
+sub format_author {
+    my $author=shift;
+
+    return "$$author{'displayName'} "
+        . "<$$author{'emailAddress'}> "
+        . "($$author{'key'})";
+}
+
+#---------------------------------------------------------------------
+# format_field
+#
+# Given a field name (label) and value, formats a line of output.
+# This exists mainly so we can cleanly handle undefined values.
+sub format_field {
+    my ( $label, $value ) =@_;
+
+    my $output = "";
+    if ( $value ) {
+        $output = "$label: $value\n";
+    }
+
+    return $output;
+}
+
+#---------------------------------------------------------------------
+# get_fieldid
+# 
+# Given a string, returns the ID for the first JIRA field matching the string
+#
+# JIRA fields are returned as an array of hashrefs of field data.
+# See https://docs.atlassian.com/jira/REST/cloud/#api/2/field-getFields
+# And no, /field/field_id doesn't work.
+
+# Cache of field data from JIRA so we only have to get it once. Only used
+# by get_fieldid.
+our $FIELD_DATA = undef;
+
+sub get_fieldid
+{
+    my ( $jira, $field_name ) = @_;
+
+    unless ( $FIELD_DATA ) {
+        $FIELD_DATA = $jira->GET('/field');
+    }
+
+    foreach my $field_hashref ( @$FIELD_DATA ) {
+        return $field_hashref->{'id'}
+            if $field_hashref->{'name'} =~ /$field_name/i;
+    }
+
+    # Maybe a but extreme, but I like throwing exceptions if something goes
+    # wrong.
+    die "Unknown field: $field_name";
+}
+
+=head1 KNOWN ISSUES
+
+=head1 SEE ALSO
+
+=head1 AUTHOR
+
+(c)2017 Grant Grueninger
+
+1;

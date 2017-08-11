@@ -1,0 +1,127 @@
+#!/bin/sh
+# Docs - these are extracted into a man page
+: <<END_OF_DOCUMENTATION
+=head1 NAME
+
+edit_jira_comment - Create a comment for a jira issue to post later
+
+=head1 SYNOPSIS
+
+    edit_jira_comment [-s save_dir] [-a assignee] jira_code
+
+    Examples:
+    # Edit comment for issue ABC-123, save it in ~/jira_comments
+    edit_jira_comment -s ~/jira_comments ABC-123
+    
+    # Do the same, but assign it to unsassigned
+    edit_jira_comment -s ~/jira_comments -a unassigned ABC-123
+                #
+    # Edit the comment for issue ABC-321, still in ~/jira_comments, because
+    # edit_jira_comment remembered it from your last -s argument, and
+    # update_comments will pick that up too.
+    edit_jira_comment ABC-321
+
+=head1 DESCRIPTION
+
+Opens a file for editing in save_dir, with the filename formatted such that
+update_comments will read it, assign the issue to the username specified by
+C<assignee> (if provided), and update the comment for jira_code with the text
+from the file.  See C<update_comments> too.
+
+If -s isn't specified, edit_jira_comment tries to read it from
+C<$HOME/.update_jira_comments_scandir>.  This is conveniently the same file
+that update_comments reads from when determining the directory from which it
+should read the comments.
+
+If you do specify -s, the comment file will be stored in the directory
+specified by save_dir, and save_dir will be stored in
+C<$HOME/.update_jira_comments_scandir> so you don't need to specify it next
+time.
+
+This is a convenience script that just saves files that update_comments can
+read - see update_comments.
+
+=cut
+END_OF_DOCUMENTATION
+
+# Stop the script if any command exits with non-zero exit status and
+# isn't caught (e.g. by && or ||).
+set -e
+
+# error "error string"
+# Given a string, outputs the string and exits the script with a non-zero
+# status.  Used to report errors.  The script will exit before error exits
+# with non-zero status, and set -e above will then abort the script.
+#
+# Example
+# do_something || error "something failed!"
+#
+error() {
+    echo "$@" >&2
+    exit 1
+}
+
+save_save_dir() {
+	# See update_comments - our save dir is the dir it scans
+    echo "$@" > "$HOME/.update_jira_comments_scandir"
+}
+
+read_save_dir() {
+    file="$HOME/.update_jira_comments_scandir"
+    test -f "$file" && cat "$file"
+}
+
+USAGE="usage: `basename $0` [-s save_dir] [-a assignee_username] jira_code"
+
+# Parse command line options.
+# Colon after a letter means it has an argument, otherwise it's a flag.
+# e.g. "d:" means you expect "-d arg", "v" means you expect "-v".
+while getopts hva:s: OPT; do
+    case "$OPT" in
+        h)  # help
+            man edit_jira_comment
+            exit 0
+            ;;
+        v) # script version
+            echo "`basename $0` version 0.1"
+            exit 0
+            ;;
+        a) # Assignee
+            assignee="$OPTARG"
+            ;;
+        s) # Dir in which to save comments
+            SAVE_DIR="$OPTARG"
+            ;;
+        \?) # Unexpected argument - usage error
+            # getopts issues an error message
+            echo $USAGE >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Remove the switches we parsed above.
+shift `expr $OPTIND - 1`
+
+# We want at least one non-option argument. 
+# Remove this block if you don't need it.
+if [ $# -eq 0 ]; then
+    echo $USAGE >&2
+    exit 1
+fi
+
+test "$SAVE_DIR" && save_save_dir "$SAVE_DIR"
+test "$SAVE_DIR" || SAVE_DIR=`read_save_dir`
+
+test "$SAVE_DIR" || error "Must specify dir in which to save comment"
+
+# Access additional arguments as usual through 
+# variables $@, $*, $1, $2, etc. or using this loop:
+jira_code=$1
+
+test "$EDITOR" || EDITOR=vim
+
+test "$assignee" && dot="." || dot=""
+filename="$jira_code.${assignee}${dot}txt"
+$EDITOR "$SAVE_DIR/$filename"
+

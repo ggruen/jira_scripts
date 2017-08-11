@@ -1,0 +1,224 @@
+#!/usr/bin/perl -w
+
+=head1 NAME
+
+update_issue - Update assignee and comment in a JIRA issue
+
+=head1 SYNOPSIS
+
+    update_issue -m machine_name -i issue_code [-c comment | -f comment_file ]
+        [ -a assignee_username ]
+
+Examples:
+
+    # Make a simple comment on ABC-123 and assign to user Joe Smith
+    update_issue -m myjira.atlassian.net -i ABC-123 -c "Web browsers are for suckers!"
+        -a joesmith
+
+    # Store a longer comment in a file, then post the comment to ABC-123 and assign it
+    # to Joe Smith.
+    cat > /tmp/jira_comment << EOT
+    This is a very important comment that I need to make, and it's long so it
+    consists of multiple lines and some !@#$ scary punctuation!
+    EOT
+    update_issue -m myjira.atlassian.net -i ABC-123 -f /tmp/jira_comment -a joesmith \
+        && rm /tmp/jira_comment
+
+    # Just leave the comment, don't assign (assuming /tmp/jira_comment contains the
+    # comment we want to post.
+    update_issue -m myjira.atlassian.net -i ABC-123 -f /tmp/jira_comment
+
+=head1 DESCRIPTION
+
+Given a JIRA instance, issue code, and optional comment or assignee, update_issue
+updates the assignee and/or adds the specified comment to the issue.
+
+Credentials for the JIRA instance must be provided in ~/.netrc, like this, before running
+the script (replacing letters in all caps with appropriate values):
+
+    echo "MY_INSTANCE.atlassian.net login USERNAME password PASSWORD" > \
+        ~/.netrc ; chmod 600 ~/.netrc
+
+update_issue updates with non-zero exit status if it's unable to post your edit.
+
+You must provide an assignee or a comment (or both).  The comment can be specified either
+as an argument using C<-c>, or as a passed file using C<-f>.
+
+To get your JIRA username, go to
+C<https://MYINSTANCE.atlassian.net/secure/ViewProfile.jspa> (replacing MYINSTANCE with
+the name of your JIRA instance) and look at the "Username" field in the "JIRA profile"
+section.  Your username is *not* the email address that you use to log in.  This
+tends to confuse people using API-based programs.
+
+=head1 OPTIONS
+
+Each option has several longer and shorter ways of expressing it.  For the single-dash
+options, use the option, space, and the value.  For double-dash options, use the
+option, equal-sign, and value.  Other variants of this might work too - man Getopt::Long
+for all the gory details.
+
+=over
+
+=item -m, --machine, --machine_name=<value>
+
+The domain name of the JIRA instance on which you wish to update the issue.  Don't
+include http(s)://.  e.g.:
+
+    -m myinstance.atlassian.net
+
+=item -i, --issue_code, --issue=<jira_issue_code>
+
+The JIRA issue code for the issue you want to update.  JIRA sometimes calls the
+C<issue_code> the "Key".  It's the C<PO-112> in
+C<https://myjira.atlassian.net/browse/PO-112>.
+
+You can only update one issue at a time with this script.
+
+=item -c, --comment=<comment>
+
+Use the provided string as the comment for the issue.  This is good for short comments,
+but you might want to use -f for longer ones.
+
+    -c "This is a totally worthwhile comment."
+
+=item -f, --file, --comment_file=<path_to_file>
+
+Read the comment from the file at the specified path.  This is the best way to handle
+multi-line comments, as the comment file will be read and JSON-encoded before posting
+to the JIRA API.
+
+    cat > /tmp/jira_comment << EOT
+    This is a very important comment that I need to make, and it's long so it
+    consists of {{multiple lines}} some !@#$ scary punctuation,
+
+    {code}
+        And a code example.  Oh My.
+    {code}
+    EOT
+    update_issue -m myjira.atlassian.net -i ABC-123 -f /tmp/jira_comment -a joesmith \
+        && rm /tmp/jira_comment
+
+If the file is "-", update_issue will read from STDIN.  That means you can do this:
+
+    cat /tmp/jira_comment | update_issue -m myjira.atlassian.net -i ABC-123 -f - \
+        -a joesmith
+
+Or more importantly:
+
+    cat <<EOT | update_issue -m myjira.atlassian.net -i ABC-123 -f - -a joesmith
+    I have a lot to say.  This is some code:
+    {code}
+    See how great is my syntax.
+    {code}
+    EOT
+
+=item -a, --assign_to, --assign=<jira_username>
+
+Given a *username* (not an email address) of a user, assigns the issue to that user.
+
+To assign to "Unassigned", use C<-a ""> (the official JIRA API way) or C<-a Unassigned>,
+a special case handled by this script (which will then send "" to the API).  Using
+"Unassigned" can be handy in cases where specifying an empty string is difficult.
+
+"Unassigned" is not case-sensitive, so "unAssIgned" will work just as well.
+
+To assign to the default assignee, specify C<-1>.  Note that due to the way arguments
+are parsed, C<-1> is actually an argument, so you could technically just do C<-1> instead
+of C<-a "-1">, but either case works.
+
+=back
+
+=cut
+
+use strict;
+use 5.006;
+
+use Getopt::Long;
+use Pod::Usage;
+use File::Slurp; # for read_file
+use JIRA::REST;
+
+my $USAGE_ARGS = {-verbose => 0, -exitval => 1};
+
+my ( $machine_name, $issue_code, $comment, $comment_file, $assign_to, $assign_to_default );
+GetOptions( 'machine_name|machine|m=s' => \$machine_name,
+    'issue|issue_code|i=s' => \$issue_code,
+    'comment|c:s' => \$comment,
+    'comment_file|file|f:s' => \$comment_file,
+    'assign_to|assign|a:s' => \$assign_to,
+    '1' => \$assign_to_default # GetOptions doesn't like "-a -1" much.
+    ) or pod2usage($USAGE_ARGS);
+
+######################################################################
+# Main Program
+
+# Get the comment via whatever means they provided it.
+if ( $comment_file ) {
+    if ($comment_file eq '-' ) {
+        # Slurp STDIN
+        $comment = read_file(\*STDIN);
+    } else {
+        $comment = read_file($comment_file);
+    }
+}
+
+# Handle special-case default assignee
+if ( $assign_to_default ) {
+	$assign_to = "";
+}
+
+pod2usage($USAGE_ARGS) unless ($comment || $assign_to);
+
+# Remove domain name in case people can't read directions.
+$machine_name =~ s/http(s)?:\/\///;
+$machine_name =~ s/\/$//;
+
+my $jira_instance = "https://$machine_name/";
+
+# Clean up the code, mostly to remove whitespace, but also to make it
+# URL-safe.
+$issue_code =~ s/^A-Za-z0-9\-//g;
+
+# Username and password will be read from .netrc.
+# TODO: add optional username and password arguments to this script and
+# pass them to JIRA::REST here.
+# my $jira = JIRA::REST->new($jira_instance, $username, $password);
+my $jira = JIRA::REST->new($jira_instance);
+
+# TODO: Could probably accept fieldname/value pairs on the command line and loop through
+# them here instead of hard-coding only two fields.
+my $fields = {};
+if ( $comment ) {
+    $fields->{'comment'} = [
+         {
+            add => {
+               body => $comment
+            }
+         }
+      ];
+}
+
+# To assign to "Unassigned", we must send the API name: "".
+if ( defined $assign_to ) {
+	$assign_to = "" if ( ( $assign_to ) =~ /^unassigned$/i );
+    $fields->{'assignee'} = [
+         {
+            'set' => { name => $assign_to }
+         }
+      ];
+}
+
+$jira->PUT("/issue/$issue_code", undef, {'update' => $fields });
+
+######################################################################
+# Subroutines
+
+=head1 KNOWN ISSUES
+
+=head1 SEE ALSO
+
+=head1 AUTHOR
+
+(c)2017 Grant Grueninger
+
+1;

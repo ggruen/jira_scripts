@@ -1,0 +1,183 @@
+#!/bin/sh
+
+: <<END_OF_DOCUMENTATION
+=head1 NAME
+
+update_comments - Post comments and assign issues based on files in a Jira Comments dir
+
+=head1 SYNOPSIS
+
+    update_comments [-q] [-s scan_dir] [-p processed_dir]
+
+=head1 DESCRIPTION
+
+Place files into the directory specified by scan_dir, run update comments.
+
+If -s isn't specified, update_comments tries to read it from
+C<$HOME/.update_jira_comments_scandir>.  Since this is conveniently the same
+file that edit_jira_comment stores the directory into which it's told to save
+comments, you probably don't need to specify -s.
+
+If you do specify -s, it's used to read comment files from (see below), and
+scan_dir is stored in C<$HOME/.update_jira_comments_scandir> so you don't need
+to specify it next time.
+
+If -p is specified, processed_dir is stored in
+C<$HOME/.update_jira_comments_processeddir> for future reference.  If -p isn't
+specified, update_comments tries to read it from
+C<$HOME/.update_jira_comments_processeddir>. If it can't get processed_dir via
+either method, it errors.
+
+update_comments loops through the files in the Jira Comments directory
+(scan_dir). The name of the file must consist of the jira issue's key,
+optionally a period followed by the username of the user to whom the issue
+should be assigned, and ".txt".  e.g. this filename would contain a comment for
+issue ABC-123 and would assign it to user "grant":
+
+    ABC-123.grant.txt
+
+This would contain a comment but not re-assign the issue:
+
+    ABC-123.txt
+    
+Either of these would contain a comment and unassign the issue:
+
+    ABC-123.unassigned.txt
+    ABC-123..txt
+
+If the username has a "." in it, you must convert it to an underscore, e.g.:
+
+    ABC-123.someone_annoying.txt
+
+would assign issue ABC-123 to the username C<someone.annoying>.
+
+The file must be a *plain* text file, probably with UNIX line endings, although
+I haven't tested that.  The contents of the file will be read as a comment,
+which will be posted using the JIRA API to the issue specified in the filename.
+If the username is present, the issue's assignee will be set to the specified
+username in the same operation, meaning they'll get a notification with the
+comment in the email.
+
+If the post is successful, the file is moved to C<processed_dir> This directory
+is created if it doesn't exist.  Files in C<processed_dir> are kept for 5 days,
+then automatically deleted after a successful completion of the script.
+
+=cut
+END_OF_DOCUMENTATION
+
+# Stop the script if any command exits with non-zero exit status and
+# isn't caught (e.g. by && or ||).
+set -e
+
+# error "error string"
+# Given a string, outputs the string and exits the script with a non-zero
+# status.  Used to report errors.  The script will exit before error exits
+# with non-zero status, and set -e above will then abort the script.
+#
+# Example
+# do_something || error "something failed!"
+#
+error() {
+    echo "$@" >&2
+    exit 1
+}
+
+save_scan_dir() {
+    echo "$@" > "$HOME/.update_jira_comments_scandir"
+}
+
+save_processed_dir() {
+    echo "$@" > "$HOME/.update_jira_comments_processeddir"
+}
+
+read_scan_dir() {
+    file="$HOME/.update_jira_comments_scandir"
+    test -f "$file" && cat "$file"
+}
+
+read_processed_dir() {
+    file="$HOME/.update_jira_comments_processeddir"
+    test -f "$file" && cat "$file"
+}
+
+USAGE="usage: `basename $0` [-q] [-s scan_directory_name] [-p processed_directory_name]"
+
+# Parse command line options.
+# Colon after a letter means it has an argument, otherwise it's a flag.
+# e.g. "d:" means you expect "-d arg", "v" means you expect "-v".
+while getopts hvqs:p: OPT; do
+    case "$OPT" in
+        h)  # help
+            man update_comments || echo "$USAGE"
+            exit 0
+            ;;
+        v) # script version
+            echo "`basename $0` version 0.1"
+            exit 0
+            ;;
+        q) # Quiet flag - don't ask questions
+            quiet=1
+            ;;
+        s) # Directory to scan
+            SCAN_DIR="$OPTARG"
+            ;;
+        p) # Processed directory
+            PROCESSED_DIR="$OPTARG"
+            ;;
+        \?) # Unexpected argument - usage error
+            # getopts issues an error message
+            error "$USAGE"
+            exit 1
+            ;;
+    esac
+done
+
+# Remove the switches we parsed above.
+shift `expr $OPTIND - 1`
+
+# If we have it, remember it
+test "$SCAN_DIR" && save_scan_dir "$SCAN_DIR"
+test "$PROCESSED_DIR" && save_processed_dir "$PROCESSED_DIR"
+
+# If we don't have it, retrieve it
+test "$SCAN_DIR" || SCAN_DIR=`read_scan_dir`
+test "$PROCESSED_DIR" || PROCESSED_DIR=`read_processed_dir`
+
+# If we still don't have it, die
+test "$SCAN_DIR" || error "-s is required unless previously used and saved"
+test "$PROCESSED_DIR" || error "-p is required unless previously used and saved"
+
+cd "$SCAN_DIR"
+mkdir -p "$PROCESSED_DIR"
+
+for file in * ; do
+    # If there are no files to process, file will be "*"
+    if [ "$file" = '*' ] ; then
+        break
+    fi
+
+    issue=`echo "$file" | cut -d. -f1`
+    assignee=`echo "$file" | cut -d. -f2`
+
+    # Handle special assignee cases.
+    assignee_arg=""
+    if [ "$assignee" == "txt" ] ; then
+    	assignee=""
+    fi
+
+    assignee=`echo "$assignee" | sed 's/_/./g'`
+    echo "$file" | grep "\.\." > /dev/null && assignee="unassigned"
+    test "$assignee" && assignee_arg="-a"
+
+    echo "$assignee" | grep -E '[^a-zA-Z0-9\.]' > /dev/null && {
+    	echo "Abort - Assignee has non-alpha-numeric characters or space:\n    Assignee: $assignee\n    File: $file"
+    	exit 1
+    }
+
+    test "$quiet" || echo "Filename: $file, issue: $issue, assignee_arg: $assignee_arg, assignee: $assignee"
+    ~/bin/update_issue -m elcjira.atlassian.net $assignee_arg $assignee -i "$issue" -f "$file" \
+        && mv "$file" "$PROCESSED_DIR"
+done
+
+# Clean up the processed dir
+find "$PROCESSED_DIR" -mindepth 1 -mtime +5 -delete

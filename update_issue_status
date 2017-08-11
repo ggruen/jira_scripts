@@ -1,0 +1,215 @@
+#!/usr/bin/perl
+
+=head1 NAME
+
+update_issue_status - Transition a JIRA issue to a new status
+
+=head1 SYNOPSIS
+
+    update_issue_status -m myinstance.atlassian.net -i jira_code \
+        -t transition_id
+    
+    # Update status of ACAC-344 to "On Prod"
+    update_issue_status -m myinstance.atlassian.net -i ACAC-344 -n "On Prod"
+
+    # Update status for issue ACAC-344 using transition ID 101
+    update_issue_status -m myinstance.atlassian.net -i ACAC-344 -t 101
+    
+    # Get transition IDs available for the workflow that ACAC-344 uses
+    update_issue_status -m myinstance.atlassian.net -i ACAC-344 -f
+
+=head1 DESCRIPTION
+
+update_issue_status can be used to programmatically transition a JIRA
+issue to a new status.
+
+=head1 OPTIONS
+
+=over
+
+=item -m, --machine, --machine_name=<value>
+
+The domain name of the JIRA instance that houses the issue you wish to view.
+Don't include http(s)://.  e.g.:
+
+    -m myinstance.atlassian.net
+
+=item -i <value>, --issue=<value>
+
+The JIRA code of the issue whose status you wish to update.
+
+=item -t <value>, --transition_id=<value>
+
+The ID (an integer) of the transition you wish to trigger.  JIRA moves
+issues from one status to another using "transitions".  This script doesn't
+support the use of fields in transitions, so if the transition you indicate has
+a screen, none of its fields will be changed.  In addition, if there are
+any required fields in that screen that aren't already filled in, the
+transition may fail.
+ 
+=item -n <value>, --transition_name=<value>
+
+The name, or part of the name, of the transition you want to trigger.  This
+is matched against available transition names (the same ones the C<-f> flag
+would output) and the first matching transition is used.
+
+The match is case-insensitive and can be anywhere within the string. e.g.
+"-n prod" would match all of the following workflow statuses:
+
+    On Prod
+    QA Prod
+    In-production
+    Production
+    Product Support
+
+It's best to use the exact name if possible to avoid an accidental match.  Look
+in the "Workflow" menu in JIRA or at the output of the C<-f> flag for the
+available names.  I say "available" because JIRA's statuses define a position
+in a "Workflow" (which you can see by clicking the "Workflow" link in JIRA), so
+for any given status, there are specific transitions available.
+
+Also note that for the C<-n> option, you're providing a transition name,
+*not* a status name.  Although the transition name may be the same as the
+status to which it transitions, this isn't guaranteed.  Again, C<-f> is
+your friend - that's the exact list C<update_issue_status> will match against.
+
+If you specify both this option and the C<-t> option, this one will win.
+
+=item -f, --fetch_ids
+
+If specified, prints the IDs of all transitions available for the specified
+JIRA issue.
+
+  update_issue_status -m myinstance.atlassian.net -f -i ABC-123
+
+=back
+
+=cut
+
+use strict;
+use warnings;
+use 5.006;
+
+use Getopt::Long;
+use Pod::Usage;
+
+use JIRA::REST;
+use Data::Dumper;
+
+my $USAGE_ARGS = {-verbose => 0, -exitval => 1};
+
+my ( $jira_code, $transition_id, $fetch_ids, $machine, $transition_name );
+GetOptions(
+    'issue|i=s' => \$jira_code,
+    'transition_id|t=i' => \$transition_id,
+    'transition_name|n=s' => \$transition_name,
+    'fetch_ids|f' => \$fetch_ids,
+    'machine|machine_name|m=s' => \$machine
+) or pod2usage($USAGE_ARGS);
+
+######################################################################
+# Main Program
+
+# Clean up in case they got creative with the instance name
+$machine =~ s/^https?:\/\///;
+$machine =~ s/\/$//;
+
+# Username and password will be read from .netrc.
+# my $jira = JIRA::REST->new($jira_instance, $username, $password);
+my $jira_instance = "https://$machine/";
+my $jira = JIRA::REST->new($jira_instance);
+
+# Get the list of transitions available for the specified issue (-f flag)
+# # https://docs.atlassian.com/jira/REST/cloud/#api/2/issue-getTransitions
+if ( $fetch_ids ) {
+    my $transitions = fetch_ids( $jira, $jira_code );
+    foreach my $transition ( @$transitions ) {
+        print $transition->{'id'} . ": " . $transition->{'name'} . "\n";
+    }
+    exit 0;
+}
+
+# If they gave a name instead of a transition number, look up the number
+if ( $transition_name ) {
+    $transition_id = fetch_id_from_name( $jira, $jira_code, $transition_name );
+}
+
+# Make the transition
+$jira->POST("/issue/$jira_code/transitions", undef, 
+    {
+        transition => {
+            id => $transition_id
+        },
+    }
+);
+
+######################################################################
+# Subroutines
+
+#---------------------------------------------------------------------
+# fetch_ids
+
+sub fetch_ids
+{
+    my ( $jira, $jira_code ) = @_;
+
+    my $response = $jira->GET("/issue/$jira_code/transitions");
+    my $transitions = $response->{'transitions'};
+    return $transitions;
+}
+
+#---------------------------------------------------------------------
+# fetch_id_from_name
+# Given a JIRA::REST instance, JIRA issue code, and a string representing
+# the name of an available transition, return the ID of the first matching
+# transition.  Note that the order of the transitions isn't guaranteed,
+# so more than one match will produce unpredictable results.
+#
+# If no matching transition ID is found, fetch_id_from_name dies.
+
+sub fetch_id_from_name
+{
+    my ( $jira, $jira_code, $transition_name ) = @_;
+
+    my $transitions = fetch_ids( $jira, $jira_code );
+    my $transition_id = undef;
+    foreach my $transition ( @$transitions ) {
+        if ( $transition->{'name'} =~ /$transition_name/ism ) {
+            $transition_id = $transition->{'id'};
+            last;
+        }
+    }
+
+    die "No available transition named $transition_name found for issue "
+        . "$jira_code.\n" unless defined $transition_id;
+
+    return $transition_id;
+}
+
+=head1 KNOWN ISSUES
+
+The C<-n> flag is case insensitive, which is convenient in most cases, but
+if you just happen to have two transition names whose names are the same
+except for capitalization, you won't be able to select the second one using
+the -n flag (but you would using C<-t>, and could fetch the transition ID
+using C<-f>.
+
+    # Jury rig setting transition to case-sensitive "Done"
+    update_issue_status -m myinstance.atlassian.net -i ACAC-344 -t \
+        `update_issue_status -m myinstance.atlassian.net -i ACAC-344 \
+            -f | grep 'Done' | cut -d: -f1`
+
+=head1 SEE ALSO
+
+https://docs.atlassian.com/jira/REST/cloud/#api/2/issue-getTransitions
+
+JIRA::REST, which is the module that handles the bulk of the work.
+http://search.cpan.org/~gnustavo/JIRA-REST-0.012/lib/JIRA/REST.pm
+
+=head1 AUTHOR
+
+(c)2017 Grant Grueninger
+
+=cut
+
+1;
