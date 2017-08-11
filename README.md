@@ -13,8 +13,20 @@ Quick Start
 - Download or clone this repo
 - Add the path to `jira_scripts` to your $PATH
 
-Install in ~/bin and ~/man
---------------------------
+Put your JIRA credentials in ~/.netrc (replacing letters in all caps with
+appropriate values):
+
+    echo "MY_INSTANCE.atlassian.net login USERNAME password PASSWORD" > \
+        ~/.netrc ; chmod 600 ~/.netrc
+
+To get your JIRA username, go to
+"https://MYINSTANCE.atlassian.net/secure/ViewProfile.jspa" (replacing
+MYINSTANCE with the name of your JIRA instance) and look at the "Username"
+field in the "JIRA profile" section.  Your username is *not* the email address
+that you use to log in.  This tends to confuse people using API-based programs.
+
+Optional: Install in ~/bin and ~/man
+------------------------------------
 
 This will install the scripts in ~/bin and man pages in ~/man.
 
@@ -60,3 +72,16 @@ Jira Comments dir
 
     edit_jira_comment [-s save_dir] [-a assignee] jira_code
 
+Updating
+========
+
+    git pull
+
+If you installed it in ~/bin and ~/man:
+
+    make install
+    make clean
+
+If you don't have the initial repository cloned, downloaded a zip, etc, you can
+just clone or re-download it. All `make` does is copy the scripts to ~/bin, run
+`pod2man` on them, and put the man pages into ~/man/man1.
