@@ -208,7 +208,18 @@ if ( defined $assign_to ) {
       ];
 }
 
-$jira->PUT("/issue/$issue_code", undef, {'update' => $fields });
+#$jira->PUT("/issue/$issue_code", undef, {'update' => $fields });
+# This is more reliable when permissions are wonky - sets the assignee if the
+# user has AssignTo permission, but not Edit permission.
+# TODO: Now we're just using $fields as a flag to determine if we have
+# something to set - change that to a flag, or just move these statements
+# up to where $fields is set.
+$jira->PUT("/issue/$issue_code/assignee", undef, {'name' => $assign_to })
+    if ( $fields->{'assignee'} );
+# Likewise - explicitly post a comment, as it'll be allowed if the user can
+# post a comment, even if they can't edit.
+$jira->POST("/issue/$issue_code/comment", undef, {'body' => $comment })
+    if ( $fields->{'comment'} );
 
 ######################################################################
 # Subroutines
