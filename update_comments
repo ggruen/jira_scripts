@@ -7,7 +7,7 @@ update_comments - Post comments and assign issues based on files in a Jira Comme
 
 =head1 SYNOPSIS
 
-    update_comments [-q] [-s scan_dir] [-p processed_dir]
+    update_comments -m machine_name [-q] [-s scan_dir] [-p processed_dir]
 
 =head1 DESCRIPTION
 
@@ -100,12 +100,12 @@ read_processed_dir() {
     test -f "$file" && cat "$file"
 }
 
-USAGE="usage: `basename \"$0\"` [-q] [-s scan_directory_name] [-p processed_directory_name]"
+USAGE="usage: `basename \"$0\"` -m machine_name [-q] [-s scan_directory_name] [-p processed_directory_name]"
 
 # Parse command line options.
 # Colon after a letter means it has an argument, otherwise it's a flag.
 # e.g. "d:" means you expect "-d arg", "v" means you expect "-v".
-while getopts hvqs:p: OPT; do
+while getopts hvqm:s:p: OPT; do
     case "$OPT" in
         h)  # help
             perldoc "$0" || echo "$USAGE"
@@ -123,6 +123,9 @@ while getopts hvqs:p: OPT; do
             ;;
         p) # Processed directory
             PROCESSED_DIR="$OPTARG"
+            ;;
+        m) # machine name
+            MACHINE="$OPTARG"
             ;;
         \?) # Unexpected argument - usage error
             # getopts issues an error message
@@ -146,6 +149,7 @@ test "$PROCESSED_DIR" || PROCESSED_DIR=`read_processed_dir`
 # If we still don't have it, die
 test "$SCAN_DIR" || error "-s is required unless previously used and saved"
 test "$PROCESSED_DIR" || error "-p is required unless previously used and saved"
+test "$MACHINE" || error "-m is required, or I don't know what to connect to"
 
 cd "$SCAN_DIR"
 mkdir -p "$PROCESSED_DIR"
@@ -175,7 +179,7 @@ for file in * ; do
     }
 
     test "$quiet" || echo "Filename: $file, issue: $issue, assignee_arg: $assignee_arg, assignee: $assignee"
-    ~/bin/update_issue -m elcjira.atlassian.net $assignee_arg $assignee -i "$issue" -f "$file" \
+    ~/bin/update_issue -m "$MACHINE" $assignee_arg $assignee -i "$issue" -f "$file" \
         && mv "$file" "$PROCESSED_DIR"
 done
 
