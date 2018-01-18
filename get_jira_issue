@@ -95,6 +95,9 @@ fields. So if you specify a custom field and it doesn't appear, it means it has
 no value.  If you specify a custom field and C<get_jira_issue> can't find it,
 on the other hand, C<get_jira_issue> will die with an appropriate error message.
 
+If the field's value is a reference (i.e. not a string or number),
+C<get_jira_issue> will pass the field's value to C<Dumper> for output.
+
 =back
 
 =cut
@@ -213,6 +216,9 @@ sub format_field {
 
     my $output = "";
     if ($value) {
+        if ( ref $value ) {
+            $value = Dumper($value);    # Not elegant, but functional
+        }
         $output = "$label: $value\n";
     }
 
@@ -244,7 +250,7 @@ sub get_fieldid {
             if $field_hashref->{'name'} =~ /$field_name/i;
     }
 
-    # Maybe a but extreme, but I like throwing exceptions if something goes
+    # May be a bit extreme, but I like throwing exceptions if something goes
     # wrong.
     die "Unknown field: $field_name";
 }
