@@ -51,7 +51,7 @@ Usage
 
 `get_jira_issue` - Fetch and display info and comments from a JRIA issue
 
-    get_jira_issue -m machine_name -i issue_code
+    get_jira_issue -m machine_name -i issue_code [-f field ...]
 
 `update_issue_status` - Transition a JIRA issue to a new status
 
