@@ -6,7 +6,7 @@ get_jira_issue - Fetch and display info and comments from a JRIA issue
 
 =head1 SYNOPSIS
 
-    get_jira_issue -m machine_name -i issue_code
+    get_jira_issue -m machine_name -i issue_code [-f field ...]
 
 Examples:
 
@@ -105,21 +105,22 @@ use 5.006;
 use Getopt::Long;
 use Pod::Usage;
 use JIRA::REST;
-use Term::ANSIColor; # To make things pretty, e.g. "color('red')"
+use Term::ANSIColor;    # To make things pretty, e.g. "color('red')"
 use Data::Dumper;
 
-my $USAGE_ARGS = {-verbose => 0, -exitval => 1};
+my $USAGE_ARGS = { -verbose => 0, -exitval => 1 };
 
 my ( $machine_name, $issue_code, @custom_fields );
-GetOptions( 'machine_name|machine|m=s' => \$machine_name,
-    'issue|issue_code|i:s' => \$issue_code,
-    'field|fields|f:s' => \@custom_fields,
-    ) or pod2usage($USAGE_ARGS);
+GetOptions(
+    'machine_name|machine|m=s' => \$machine_name,
+    'issue|issue_code|i:s'     => \$issue_code,
+    'field|fields|f:s'         => \@custom_fields,
+) or pod2usage($USAGE_ARGS);
 
 ######################################################################
 # Main Program
 
-unless ( $issue_code ) {
+unless ($issue_code) {
     $issue_code = `cat $ENV{'HOME'}/.get_jira_issue_code_cache`;
 }
 
@@ -136,7 +137,7 @@ my $jira_instance = "https://$machine_name/";
 $issue_code =~ s/^A-Za-z0-9\-//g;
 
 # Allow comma-delimited fields
-@custom_fields = split(/,/,join(',',@custom_fields));
+@custom_fields = split( /,/, join( ',', @custom_fields ) );
 
 # Username and password will be read from .netrc.
 # TODO: add optional username and password arguments to this script and
@@ -146,7 +147,8 @@ my $jira = JIRA::REST->new($jira_instance);
 
 my $issue_fields = $jira->GET("/issue/$issue_code");
 
-my $fields=$issue_fields->{'fields'} or die "Couldn't get fields from issue $issue_code";
+my $fields = $issue_fields->{'fields'}
+    or die "Couldn't get fields from issue $issue_code";
 
 # I'm assuming the stuff we get from JIRA is encoded UTF-8, because most
 # web stuff is. man perlunifaq.
@@ -154,28 +156,32 @@ binmode STDOUT, ":encoding(UTF-8)";
 
 print "\nComments:\n";
 
-foreach my $c ( @{$$fields{'comment'}{'comments'}} ) {
+foreach my $c ( @{ $$fields{'comment'}{'comments'} } ) {
+
     # "color" function provided by Term::ANSIColor
-    printf(color('white on_blue') . "\n\n%-30s %-20s\n" . color('reset'),
-        $$c{'updateAuthor'}{'displayName'}, $$c{'updated'});
+    printf(
+        color('white on_blue') . "\n\n%-30s %-20s\n" . color('reset'),
+        $$c{'updateAuthor'}{'displayName'},
+        $$c{'updated'}
+    );
     print "\n$$c{'body'}\n";
 }
 
 # Yes, these details are at the bottom.  You'll see why after you run it
 # a few times and think, "ooh, I don't have to scroll up or use 'more'
 # to see the stuff I want to".
-print color('white on_blue'), "Issue Key: $$issue_fields{'key'}", color('reset'), "\n";
-print format_field( 'Status', $$fields{'status'}{'name'} );
+print color('white on_blue'), "Issue Key: $$issue_fields{'key'}",
+    color('reset'), "\n";
+print format_field( 'Status',   $$fields{'status'}{'name'} );
 print format_field( 'Reporter', format_author( $$fields{'reporter'} ) );
+
 #print format_field( 'Branch', $$fields{'customfield_13703'} );
 print format_field( 'Assignee', format_author( $$fields{'assignee'} ) );
+
 # Print the custom fields
-foreach my $field_name ( @custom_fields ) {
+foreach my $field_name (@custom_fields) {
     my $field_id = get_fieldid( $jira, $field_name );
-    print format_field(
-        $field_name,
-        $$fields{"$field_id"}
-    );
+    print format_field( $field_name, $$fields{"$field_id"} );
 }
 
 # Remember...
@@ -189,9 +195,10 @@ close OUTFILE;
 # Subroutines
 
 sub format_author {
-    my $author=shift;
+    my $author = shift;
 
-    return "$$author{'displayName'} "
+    return
+          "$$author{'displayName'} "
         . "<$$author{'emailAddress'}> "
         . "($$author{'key'})";
 }
@@ -202,10 +209,10 @@ sub format_author {
 # Given a field name (label) and value, formats a line of output.
 # This exists mainly so we can cleanly handle undefined values.
 sub format_field {
-    my ( $label, $value ) =@_;
+    my ( $label, $value ) = @_;
 
     my $output = "";
-    if ( $value ) {
+    if ($value) {
         $output = "$label: $value\n";
     }
 
@@ -214,7 +221,7 @@ sub format_field {
 
 #---------------------------------------------------------------------
 # get_fieldid
-# 
+#
 # Given a string, returns the ID for the first JIRA field matching the string
 #
 # JIRA fields are returned as an array of hashrefs of field data.
@@ -225,15 +232,14 @@ sub format_field {
 # by get_fieldid.
 our $FIELD_DATA = undef;
 
-sub get_fieldid
-{
+sub get_fieldid {
     my ( $jira, $field_name ) = @_;
 
-    unless ( $FIELD_DATA ) {
+    unless ($FIELD_DATA) {
         $FIELD_DATA = $jira->GET('/field');
     }
 
-    foreach my $field_hashref ( @$FIELD_DATA ) {
+    foreach my $field_hashref (@$FIELD_DATA) {
         return $field_hashref->{'id'}
             if $field_hashref->{'name'} =~ /$field_name/i;
     }
