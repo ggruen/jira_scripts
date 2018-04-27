@@ -39,7 +39,7 @@ issue ABC-123 and would assign it to user "grant":
 This would contain a comment but not re-assign the issue:
 
     ABC-123.txt
-    
+
 Either of these would contain a comment and unassign the issue:
 
     ABC-123.unassigned.txt
@@ -154,7 +154,8 @@ test "$MACHINE" || error "-m is required, or I don't know what to connect to"
 cd "$SCAN_DIR"
 mkdir -p "$PROCESSED_DIR"
 
-for file in * ; do
+# ls -r gets unassigned comments before assigned ones
+for file in `ls -r` ; do
     # If there are no files to process, file will be "*"
     if [ "$file" = '*' ] ; then
         break
