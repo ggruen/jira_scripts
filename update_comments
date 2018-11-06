@@ -105,7 +105,8 @@ USAGE="usage: $(basename "$0") -m machine_name [-q] [-s scan_directory_name] [-p
 # Parse command line options.
 # Colon after a letter means it has an argument, otherwise it's a flag.
 # e.g. "d:" means you expect "-d arg", "v" means you expect "-v".
-while getopts hvqm:s:p: OPT; do
+save_ok=1
+while getopts hvqm:s:p:n OPT; do
     case "$OPT" in
         h)  # help
             perldoc "$0" || echo "$USAGE"
@@ -126,6 +127,9 @@ while getopts hvqm:s:p: OPT; do
             ;;
         m) # machine name
             MACHINE="$OPTARG"
+            ;;
+        n) # No-run. Only do non-destructive stuff.
+            save_ok=""
             ;;
         \?) # Unexpected argument - usage error
             # getopts issues an error message
@@ -184,8 +188,11 @@ for file in *[0-9].txt *[!0-9].txt ; do
     }
 
     test "$quiet" || echo "Filename: $file, issue: $issue, assignee_arg: $assignee_arg, assignee: $assignee"
-    ~/bin/update_issue -m "$MACHINE" $assignee_arg $assignee -i "$issue" -f "$file" \
-        && mv "$file" "$PROCESSED_DIR"
+    if [ "$save_ok" ] ; then
+        "$HOME/bin/update_issue" -m "$MACHINE" $assignee_arg $assignee \
+            -i "$issue" -f "$file" \
+            && mv "$file" "$PROCESSED_DIR"
+    fi
 done
 
 # Clean up the processed dir
