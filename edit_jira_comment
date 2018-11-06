@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Docs - these are extracted into a man page
 : <<END_OF_DOCUMENTATION
 =head1 NAME
@@ -12,7 +12,7 @@ edit_jira_comment - Create a comment for a jira issue to post later
     Examples:
     # Edit comment for issue ABC-123, save it in ~/jira_comments
     edit_jira_comment -s ~/jira_comments ABC-123
-    
+
     # Do the same, but assign it to unsassigned
     edit_jira_comment -s ~/jira_comments -a unassigned ABC-123
                 #
@@ -71,7 +71,7 @@ read_save_dir() {
     test -f "$file" && cat "$file"
 }
 
-USAGE="usage: `basename $0` [-s save_dir] [-a assignee_username] jira_code"
+USAGE="usage: $(basename "$0") [-s save_dir] [-a assignee_username] jira_code"
 
 # Parse command line options.
 # Colon after a letter means it has an argument, otherwise it's a flag.
@@ -83,7 +83,7 @@ while getopts hva:s: OPT; do
             exit 0
             ;;
         v) # script version
-            echo "`basename $0` version 0.1"
+            echo "$(basename "$0") version 0.1"
             exit 0
             ;;
         a) # Assignee
@@ -94,28 +94,28 @@ while getopts hva:s: OPT; do
             ;;
         \?) # Unexpected argument - usage error
             # getopts issues an error message
-            echo $USAGE >&2
+            echo "$USAGE" >&2
             exit 1
             ;;
     esac
 done
 
 # Remove the switches we parsed above.
-shift `expr $OPTIND - 1`
+shift $((OPTIND - 1))
 
-# We want at least one non-option argument. 
+# We want at least one non-option argument.
 # Remove this block if you don't need it.
 if [ $# -eq 0 ]; then
-    echo $USAGE >&2
+    echo "$USAGE" >&2
     exit 1
 fi
 
 test "$SAVE_DIR" && save_save_dir "$SAVE_DIR"
-test "$SAVE_DIR" || SAVE_DIR=`read_save_dir`
+test "$SAVE_DIR" || SAVE_DIR=$(read_save_dir)
 
 test "$SAVE_DIR" || error "Must specify dir in which to save comment"
 
-# Access additional arguments as usual through 
+# Access additional arguments as usual through
 # variables $@, $*, $1, $2, etc. or using this loop:
 jira_code=$1
 

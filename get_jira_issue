@@ -188,9 +188,9 @@ foreach my $field_name (@custom_fields) {
 }
 
 # Remember...
-open OUTFILE, '>', "$ENV{'HOME'}/.get_jira_issue_code_cache";
-print OUTFILE "$issue_code";
-close OUTFILE;
+open my $outfile, '>', "$ENV{'HOME'}/.get_jira_issue_code_cache";
+print $outfile "$issue_code";
+close $outfile;
 
 # Handy if you want to add fields
 #print Dumper($issue_fields);

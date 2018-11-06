@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 : <<END_OF_DOCUMENTATION
 =head1 NAME
@@ -100,7 +100,7 @@ read_processed_dir() {
     test -f "$file" && cat "$file"
 }
 
-USAGE="usage: `basename \"$0\"` -m machine_name [-q] [-s scan_directory_name] [-p processed_directory_name]"
+USAGE="usage: $(basename "$0") -m machine_name [-q] [-s scan_directory_name] [-p processed_directory_name]"
 
 # Parse command line options.
 # Colon after a letter means it has an argument, otherwise it's a flag.
@@ -112,7 +112,7 @@ while getopts hvqm:s:p: OPT; do
             exit 0
             ;;
         v) # script version
-            echo "`basename \"$0\"` version 0.2"
+            echo "$(basename "$0") version 0.2"
             exit 0
             ;;
         q) # Quiet flag - don't ask questions
@@ -136,15 +136,15 @@ while getopts hvqm:s:p: OPT; do
 done
 
 # Remove the switches we parsed above.
-shift `expr $OPTIND - 1`
+shift $((OPTIND - 1))
 
 # If we have it, remember it
 test "$SCAN_DIR" && save_scan_dir "$SCAN_DIR"
 test "$PROCESSED_DIR" && save_processed_dir "$PROCESSED_DIR"
 
 # If we don't have it, retrieve it
-test "$SCAN_DIR" || SCAN_DIR=`read_scan_dir`
-test "$PROCESSED_DIR" || PROCESSED_DIR=`read_processed_dir`
+test "$SCAN_DIR" || SCAN_DIR=$(read_scan_dir)
+test "$PROCESSED_DIR" || PROCESSED_DIR=$(read_processed_dir)
 
 # If we still don't have it, die
 test "$SCAN_DIR" || error "-s is required unless previously used and saved"
@@ -154,15 +154,15 @@ test "$MACHINE" || error "-m is required, or I don't know what to connect to"
 cd "$SCAN_DIR"
 mkdir -p "$PROCESSED_DIR"
 
-# ls -r gets unassigned comments before assigned ones
-for file in `ls -r` ; do
+# Get comments with assignees first, then comments without them
+for file in *[0-9].txt *[!0-9].txt ; do
     # If there are no files to process, file will be "*"
     if [ "$file" = '*' ] ; then
         break
     fi
 
-    issue=`echo "$file" | cut -d. -f1`
-    assignee=`echo "$file" | cut -d. -f2`
+    issue=$(echo "$file" | cut -d. -f1)
+    assignee=$(echo "$file" | cut -d. -f2)
 
     # Handle special assignee cases.
     assignee_arg=""
@@ -170,12 +170,16 @@ for file in `ls -r` ; do
     	assignee=""
     fi
 
-    assignee=`echo "$assignee" | sed 's/_/./g'`
-    echo "$file" | grep "\.\." > /dev/null && assignee="unassigned"
+    # Change _ into . to let people name files "ABC-123.first_last.txt"
+    # and convert the name into "first.last".
+    assignee=${assignee//_/.}
+    # If they did "ABC-123..txt", set assignee to "unassigned" to unassign the
+    # issue.
+    echo "$file" | grep "\\.\\." > /dev/null && assignee="unassigned"
     test "$assignee" && assignee_arg="-a"
 
-    echo "$assignee" | grep -E '[^a-zA-Z0-9\.]' > /dev/null && {
-    	echo "Abort - Assignee has non-alpha-numeric characters or space:\n    Assignee: $assignee\n    File: $file"
+    echo "$assignee" | grep -E '[^a-zA-Z0-9\.\-]' > /dev/null && {
+        printf "Abort - Assignee has non-alpha-numeric characters or space:\\n    Assignee: %s\\n        File: %s" "$assignee" "$file"
     	exit 1
     }
 
