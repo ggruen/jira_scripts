@@ -8,13 +8,13 @@ update_issue_status - Transition a JIRA issue to a new status
 
     update_issue_status -m myinstance.atlassian.net -i jira_code \
         -t transition_id
-    
+
     # Update status of ACAC-344 to "On Prod"
     update_issue_status -m myinstance.atlassian.net -i ACAC-344 -n "On Prod"
 
     # Update status for issue ACAC-344 using transition ID 101
     update_issue_status -m myinstance.atlassian.net -i ACAC-344 -t 101
-    
+
     # Get transition IDs available for the workflow that ACAC-344 uses
     update_issue_status -m myinstance.atlassian.net -i ACAC-344 -f
 
@@ -46,7 +46,7 @@ support the use of fields in transitions, so if the transition you indicate has
 a screen, none of its fields will be changed.  In addition, if there are
 any required fields in that screen that aren't already filled in, the
 transition may fail.
- 
+
 =item -n <value>, --transition_name=<value>
 
 The name, or part of the name, of the transition you want to trigger.  This
@@ -135,7 +135,7 @@ if ( $transition_name ) {
 }
 
 # Make the transition
-$jira->POST("/issue/$jira_code/transitions", undef, 
+$jira->POST("/issue/$jira_code/transitions", undef,
     {
         transition => {
             id => $transition_id
