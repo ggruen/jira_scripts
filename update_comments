@@ -158,13 +158,14 @@ test "$MACHINE" || error "-m is required, or I don't know what to connect to"
 cd "$SCAN_DIR"
 mkdir -p "$PROCESSED_DIR"
 
-# Get comments with assignees first, then comments without them
-for file in *[0-9].txt *[!0-9].txt ; do
-    # If there are no files to process, file will be "*"
-    if [ "$file" = '*' ] ; then
-        break
-    fi
+# sort --reverse gets comments with assignees after comments without assignees
+# so that you can add notes, then assign the issue to someone with a
+# user-specific comment.
+find . -name "*.txt" -print | sort --reverse | while read -r file ; do
+    # Find returns results like "./ABC-123.assignee.txt". Grab the filename.
+    file=$(echo "$file" | cut -d/ -f2)
 
+    # Our filename format is "issue_code.assignee.txt" or "issue_code.txt"
     issue=$(echo "$file" | cut -d. -f1)
     assignee=$(echo "$file" | cut -d. -f2)
 
