@@ -168,9 +168,6 @@ find . -name "*.txt" -print | sort --reverse | while read -r file ; do
     # Our filename format is "issue_code.assignee.txt" or "issue_code.txt"
     issue=$(echo "$file" | cut -d. -f1)
     assignee=$(echo "$file" | cut -d. -f2)
-
-    # Handle special assignee cases.
-    assignee_arg=""
     if [ "$assignee" == "txt" ] ; then
     	assignee=""
     fi
@@ -178,17 +175,23 @@ find . -name "*.txt" -print | sort --reverse | while read -r file ; do
     # Change _ into . to let people name files "ABC-123.first_last.txt"
     # and convert the name into "first.last".
     assignee=${assignee//_/.}
-    # If they did "ABC-123..txt", set assignee to "unassigned" to unassign the
-    # issue.
+    # Allow "ABC-123..txt" as a shorthand for "ABC-123.unassigned.txt"
     echo "$file" | grep "\\.\\." > /dev/null && assignee="unassigned"
-    test "$assignee" && assignee_arg="-a"
 
     echo "$assignee" | grep -E '[^a-zA-Z0-9\.\-]' > /dev/null && {
         printf "Abort - Assignee has non-alpha-numeric characters or space:\\n    Assignee: %s\\n        File: %s" "$assignee" "$file"
     	exit 1
     }
 
-    test "$quiet" || echo "Filename: $file, issue: $issue, assignee_arg: $assignee_arg, assignee: $assignee"
+    # If we have an assignee, we'll need to give update_issue a "-a" argument
+    assignee_arg=""
+    test "$assignee" && assignee_arg="-a"
+
+    # Tell the user what we're going to do, unless they've said to be quiet
+    test "$quiet" || echo "Filename: $file, issue: $issue, " \
+        "assignee_arg: $assignee_arg, assignee: $assignee"
+
+    # If the user specified the "-n" argument, skip making any actual changes
     if [ "$save_ok" ] ; then
         "$HOME/bin/update_issue" -m "$MACHINE" $assignee_arg $assignee \
             -i "$issue" -f "$file" \
