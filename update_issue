@@ -12,7 +12,7 @@ update_issue - Update assignee and comment in a JIRA issue
 Examples:
 
     # Make a simple comment on ABC-123 and assign to user Joe Smith
-    update_issue -m myjira.atlassian.net -i ABC-123 -c "Web browsers are for suckers!"
+    update_issue -m myjira.atlassian.net -i ABC-123 -c "Web browsers are for suckers!" \
         -a joesmith
 
     # Store a longer comment in a file, then post the comment to ABC-123 and assign it
@@ -114,17 +114,24 @@ Or more importantly:
 
 =item -a, --assign_to, --assign=<jira_username>
 
-Given a *username* (not an email address) of a user, assigns the issue to that user.
+Given a *username* (not an email address) of a user, assigns the issue to that
+user.
 
-To assign to "Unassigned", use C<-a ""> (the official JIRA API way) or C<-a Unassigned>,
-a special case handled by this script (which will then send "" to the API).  Using
-"Unassigned" can be handy in cases where specifying an empty string is difficult.
+To assign to "Unassigned", use C<-a ""> (the official JIRA API way) or C<-a
+Unassigned>, a special case handled by this script (which will then send "" to
+the API).  Using "Unassigned" can be handy in cases where specifying an empty
+string is difficult.
+
+NOTE: The JIRA API returns a "400" error if you use C<-a ""> as of 11/19/18.
+Use C<-a -1> instead.
 
 "Unassigned" is not case-sensitive, so "unAssIgned" will work just as well.
 
-To assign to the default assignee, specify C<-1>.  Note that due to the way arguments
-are parsed, C<-1> is actually an argument, so you could technically just do C<-1> instead
-of C<-a "-1">, but either case works.
+To assign to the default assignee, specify C<-1>.  Note that due to the way
+arguments are parsed, C<-1> is actually an argument, so you could technically
+just do C<-1> instead of C<-a "-1">, but either case works, and the intent of
+C<-a -1> is clearer.  The script doesn't support C<-a default> on the off
+chance that there's a user whose username is "default".
 
 =back
 
@@ -164,10 +171,11 @@ if ( $comment_file ) {
 
 # Handle special-case default assignee
 if ( $assign_to_default ) {
-	$assign_to = "";
+	$assign_to = "-1";
 }
 
-pod2usage($USAGE_ARGS) unless ($comment || $assign_to);
+# comment or assign_to is required, but they can be empty strings.
+pod2usage($USAGE_ARGS) unless (defined $comment || defined $assign_to);
 
 # Remove domain name in case people can't read directions.
 $machine_name =~ s/http(s)?:\/\///;
@@ -200,7 +208,14 @@ if ( $comment ) {
 
 # To assign to "Unassigned", we must send the API name: "".
 if ( defined $assign_to ) {
-	$assign_to = "" if ( ( $assign_to ) =~ /^unassigned$/i );
+    # https://confluence.atlassian.com/jirakb/how-to-set-assignee-to-unassigned-via-rest-api-in-jira-744721880.html
+    # says we should be able to assign to "" to explicitly unassign an issue,
+    # but that produces a 400 error.  So, error instead with the workaround
+    # until that gets fixed.
+    $assign_to = "" if ( ( $assign_to ) =~ /^unassigned$/ismo );
+    die "JIRA API doesn't support 'unassigned'. Please use \"-a -1\" instead "
+        . "to assign to default assignee (which is usually unassigned).\n"
+        if ( ($assign_to) eq "" );
     $fields->{'assignee'} = [
          {
             'set' => { name => $assign_to }
