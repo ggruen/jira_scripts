@@ -16,7 +16,7 @@ Quick Start
 Put your JIRA credentials in ~/.netrc (replacing letters in all caps with
 appropriate values):
 
-    echo "MY_INSTANCE.atlassian.net login USERNAME password PASSWORD" > \
+    echo "machine MY_INSTANCE.atlassian.net login USERNAME password PASSWORD" > \
         ~/.netrc ; chmod 600 ~/.netrc
 
 To get your JIRA username, go to
@@ -24,6 +24,8 @@ To get your JIRA username, go to
 MYINSTANCE with the name of your JIRA instance) and look at the "Username"
 field in the "JIRA profile" section.  Your username is *not* the email address
 that you use to log in.  This tends to confuse people using API-based programs.
+
+Note that you can use self-hosted JIRA instances too, e.g. `jira.mycompany.com`.
 
 Optional: Install in ~/bin and ~/man
 ------------------------------------
